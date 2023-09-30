@@ -1,0 +1,451 @@
+// ***MatchName***
+//       *****
+// 	    Player1: Right Handed, ***Federer***
+// de_ct  mid  ad_ct
+// -----+-----+-----
+// |    |     |    |
+// | 1  |  2  | 3  |
+// |    |     |    |
+// |===============|
+// |    |     |    |
+// | 4  |  5  | 6  |
+// |    |     |    |
+// -----+-----+-----
+// ad_ct  mid  de_ct
+// 	    Player2: Right Handed, ***Nadal***
+//       *****
+
+
+// Definitions for fatigue score (GPT used to rank from least tiring (1) to most tiring (9)), added everytime the shot is made
+#define Forehand_ChipSlice_Fatigue 1;
+#define Backhand_Slice_Fatigue 1;
+#define Forehand_Volley_Fatigue 2;
+#define Backhand_Volley_Fatigue 2;
+#define Forehand_Fatigue 3;
+#define Backhand_Fatigue 3;
+#define Forehand_Dropshot_Fatigue 4;
+#define Backhand_Dropshot_Fatigue 4;
+#define Forehand_Lob_Fatigue 5;
+#define Backhand_Lob_Fatigue 5;
+#define Forehand_Halfvolley_Fatigue 6;
+#define Backhand_Halfvolley_Fatigue 6;
+#define Forehand_SwingingVolley_Fatigue 7;
+#define Backhand_SwingingVolley_Fatigue 7;
+#define Smash_Fatigue 8;
+#define Backhand_Smash_Fatigue 8;
+#define Trick_Shot_Fatigue 9;
+
+//variable declarations
+enum{p1_ad_ct, p1_de_ct, p2_ad_ct, p2_de_ct}; //serve position: ad court or deuce court
+enum{player1, player2, na};
+#define end_score 7; 
+#define P1_STAMINA 17; // stamina maybe can get from their elo ranking or some player statistics source?
+#define P2_STAMINA 17;
+
+var turn = na; //serve turn;
+var p1score = 0;
+var p2score = 0;
+var won = na;
+var ball = 9;
+var p1_fatigue: {0..(P1_STAMINA + 10)} = 0; // multiply error probabilities by the fatigue level (maybe can just add or sth)
+var p2_fatigue: {0..(P2_STAMINA + 10)} = 0; 
+
+
+// This is how the game itself will be launched
+TieBreakGame = WhoServe1st; (Player1Serve [] Player2Serve);
+
+// This is how the game starts/continues (e.g. Player1Serve/Player2Serve until win condition eventually reached), notice that NextPt is called on every error
+NextPt = Player1Serve [] Player2Serve [] ([won != na] GameOver -> Skip);
+
+// Event to determine who serves first, basically 50/50
+WhoServe1st = []i:{p1_de_ct,p2_de_ct}@ TossCoin{turn = i} -> Skip;
+
+// Service events, after WhoServe1st in TieBreakGame runs sequentially, either Player1Serve or Player2Serve can run (general choice)
+Player1Serve = [won == na && turn == p1_de_ct]p1Ready_DeCt -> De_Ply1Serve [] [won == na && turn == p1_ad_ct] p1Ready_AdCt -> Ad_Ply1Serve;
+Player2Serve = [won == na && turn == p2_de_ct]p2Ready_DeCt -> De_Ply2Serve [] [won == na && turn == p2_ad_ct] p2Ready_AdCt -> Ad_Ply2Serve;
+
+// Error events, increment score and check for win condition, then call NextPt (which has GameOver -> Skip)
+p1_stroke_error = {p2score++; p1_fatigue = p1_fatigue * (3/4); if (p2score==end_score) {won=player2};  turn=((turn+1)%4)} -> NextPt;
+p2_stroke_error = {p1score++; p2_fatigue = p2_fatigue * (3/4); if (p1score==end_score) {won=player1};  turn=((turn+1)%4);} -> NextPt;
+
+// Endgame conditions/assertions
+#define player1Win won == player1;
+#define player2Win won == player2;
+#assert TieBreakGame reaches player1Win with prob;
+#assert TieBreakGame reaches player2Win with prob;
+#assert TieBreakGame deadlockfree;
+
+
+// Service probabilities, basically need fill in with the PlyX_BackhandR and Ply2_ForeHandR is basically the service return shot, 2nd serve is if 1st serve is erroneous
+De_Ply1Serve = pcase {                             
+			1: ServeT_in{ball= 5} -> Ply2_mid_stroke  
+			1: ServeWide_in{ball =6} -> Ply2_de_stroke 
+			1: ServeBody_in{ball=6} -> Ply2_de_stroke
+			1: Serve_err{ball=9} -> De_Ply1Serve_2nd}; 
+
+De_Ply1Serve_2nd = pcase {                 //1st serve is out
+			1: ServeT_in{ball= 5} -> Ply2_mid_stroke  
+			1: ServeWide_in{ball =6} -> Ply2_de_stroke 
+			1: ServeBody_in{ball=6} -> Ply2_de_stroke
+			1: Serve_err{ball=9} -> Fdoublefault{p2score++; if (p2score == end_score) {won = player2} 
+      		                                                        else { turn = (turn+1)%4} }-> NextPt
+     		 };
+
+Ad_Ply1Serve = pcase {
+			1: ServeT_in{ball= 5} -> Ply2_mid_stroke  
+			1: ServeWide_in{ball =4} -> Ply2_ad_stroke
+			1: ServeBody_in{ball=4} -> Ply2_ad_stroke
+			1: Serve_err{ball=9} -> Ad_Ply1Serve_2nd}; 
+
+Ad_Ply1Serve_2nd = pcase {                 //1st serve is out
+			1: ServeT_in{ball= 5} -> Ply2_mid_stroke  
+			1: ServeWide_in{ball =4} -> Ply2_ad_stroke
+			1: ServeBody_in{ball=4} -> Ply2_ad_stroke
+			1: Serve_err{ball=9} -> Fdoublefault{p2score++; if (p2score == end_score) {won = player2} 
+      		                                                        else { turn = (turn+1)%4} }-> NextPt
+     		 };    
+     		 
+De_Ply2Serve = pcase {
+			1 : ServeT_in{ball= 2} -> Ply1_mid_stroke
+			1 : ServeWide_in{ball =1} -> Ply1_de_stroke
+			1: ServeBody_in{ball=1} -> Ply1_de_stroke
+			1: Serve_err{ball=9} -> De_Ply2Serve_2nd}; 
+
+De_Ply2Serve_2nd = pcase {                 //1st serve is out
+			1 : ServeT_in{ball= 2} -> Ply1_mid_stroke
+			1 : ServeWide_in{ball =1} -> Ply1_de_stroke
+			1: ServeBody_in{ball=1} -> Ply1_de_stroke
+			1 : Serve_err{ball=9} -> Ndoublefault{p1score++; if (p1score == end_score) {won = player1} 
+      		                                                     else { turn = (turn+1)%4} }-> NextPt
+     		 };
+     		 
+Ad_Ply2Serve = pcase {
+			1: ServeT_in{ball= 2} -> Ply1_mid_stroke
+			1 : ServeWide_in{ball =3} -> Ply1_ad_stroke
+			1: ServeBody_in{ball=3} -> Ply1_ad_stroke
+			1: Serve_err{ball=9} -> Ad_Ply2Serve_2nd}; 
+
+Ad_Ply2Serve_2nd = pcase {                 //1st serve is out
+			1: ServeT_in{ball= 2} -> Ply1_mid_stroke
+			1 : ServeWide_in{ball =3} -> Ply1_ad_stroke
+			1: ServeBody_in{ball=3} -> Ply1_ad_stroke
+			1: Serve_err{ball=9} -> Ndoublefault{p1score++; if (p1score == end_score) {won = player1} 
+      		                                                     else { turn = (turn+1)%4} }-> NextPt
+     		 };
+
+
+// These are stroke probabilities that the player will perform each shot, and which court he performs it to. Alternates between p1_stroke and p2_stroke until an error occurs.
+Ply2_de_stroke = pcase{
+			1: Smash {ball=1; p2_fatigue = p2_fatigue + Smash_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_de_stroke}
+			1: Smash {ball=2; p2_fatigue = p2_fatigue + Smash_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_mid_stroke}
+			1: Smash {ball=3; p2_fatigue = p2_fatigue + Smash_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_ad_stroke}
+			1: Forehand {ball=1; p2_fatigue = p2_fatigue + Forehand_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_de_stroke}
+			1: Forehand {ball=2; p2_fatigue = p2_fatigue + Forehand_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_mid_stroke}
+			1: Forehand {ball=3; p2_fatigue = p2_fatigue + Forehand_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_ad_stroke}
+			1: Backhand {ball=1; p2_fatigue = p2_fatigue + Backhand_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_de_stroke}
+			1: Backhand {ball=2; p2_fatigue = p2_fatigue + Backhand_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_mid_stroke}
+			1: Backhand {ball=3; p2_fatigue = p2_fatigue + Backhand_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_ad_stroke}
+			1: Forehand_Volley {ball=1; p2_fatigue = p2_fatigue + Forehand_Volley_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_de_stroke}
+			1: Forehand_Volley {ball=2; p2_fatigue = p2_fatigue + Forehand_Volley_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_mid_stroke}
+			1: Forehand_Volley {ball=3; p2_fatigue = p2_fatigue + Forehand_Volley_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_ad_stroke}
+			1: Backhand_Volley {ball=1; p2_fatigue = p2_fatigue + Backhand_Volley_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_de_stroke}
+			1: Backhand_Volley {ball=2; p2_fatigue = p2_fatigue + Backhand_Volley_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_mid_stroke}
+			1: Backhand_Volley {ball=3; p2_fatigue = p2_fatigue + Backhand_Volley_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_ad_stroke}
+			1: Forehand_ChipSlice {ball=1; p2_fatigue = p2_fatigue + Forehand_ChipSlice_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_de_stroke}
+			1: Forehand_ChipSlice {ball=2; p2_fatigue = p2_fatigue + Forehand_ChipSlice_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_mid_stroke}
+			1: Forehand_ChipSlice {ball=3; p2_fatigue = p2_fatigue + Forehand_ChipSlice_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_ad_stroke}
+			1: Backhand_Slice {ball=1; p2_fatigue = p2_fatigue + Backhand_Slice_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_de_stroke}
+			1: Backhand_Slice {ball=2; p2_fatigue = p2_fatigue + Backhand_Slice_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_mid_stroke}
+			1: Backhand_Slice {ball=3; p2_fatigue = p2_fatigue + Backhand_Slice_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_ad_stroke}
+			1: Forehand_Dropshot {ball=1; p2_fatigue = p2_fatigue + Forehand_Dropshot_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_de_stroke}
+			1: Forehand_Dropshot {ball=2; p2_fatigue = p2_fatigue + Forehand_Dropshot_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_mid_stroke}
+			1: Forehand_Dropshot {ball=3; p2_fatigue = p2_fatigue + Forehand_Dropshot_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_ad_stroke}
+			1: Backhand_Dropshot {ball=1; p2_fatigue = p2_fatigue + Backhand_Dropshot_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_de_stroke}
+			1: Backhand_Dropshot {ball=2; p2_fatigue = p2_fatigue + Backhand_Dropshot_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_mid_stroke}
+			1: Backhand_Dropshot {ball=3; p2_fatigue = p2_fatigue + Backhand_Dropshot_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_ad_stroke}
+			1: Forehand_Lob {ball=1; p2_fatigue = p2_fatigue + Forehand_Lob_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_de_stroke}
+			1: Forehand_Lob {ball=2; p2_fatigue = p2_fatigue + Forehand_Lob_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_mid_stroke}
+			1: Forehand_Lob {ball=3; p2_fatigue = p2_fatigue + Forehand_Lob_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_ad_stroke}
+			1: Backhand_Lob {ball=1; p2_fatigue = p2_fatigue + Backhand_Lob_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_de_stroke}
+			1: Backhand_Lob {ball=2; p2_fatigue = p2_fatigue + Backhand_Lob_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_mid_stroke}
+			1: Backhand_Lob {ball=3; p2_fatigue = p2_fatigue + Backhand_Lob_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_ad_stroke}
+			1: Forehand_Halfvolley {ball=1; p2_fatigue = p2_fatigue + Forehand_Halfvolley_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_de_stroke}
+			1: Forehand_Halfvolley {ball=2; p2_fatigue = p2_fatigue + Forehand_Halfvolley_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_mid_stroke}
+			1: Forehand_Halfvolley {ball=3; p2_fatigue = p2_fatigue + Forehand_Halfvolley_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_ad_stroke}
+			1: Backhand_Halfvolley {ball=1; p2_fatigue = p2_fatigue + Backhand_Halfvolley_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_de_stroke}
+			1: Backhand_Halfvolley {ball=2; p2_fatigue = p2_fatigue + Backhand_Halfvolley_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_mid_stroke}
+			1: Backhand_Halfvolley {ball=3; p2_fatigue = p2_fatigue + Backhand_Halfvolley_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_ad_stroke}
+			1: Forehand_SwingingVolley {ball=1; p2_fatigue = p2_fatigue + Forehand_SwingingVolley_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_de_stroke}
+			1: Forehand_SwingingVolley {ball=2; p2_fatigue = p2_fatigue + Forehand_SwingingVolley_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_mid_stroke}
+			1: Forehand_SwingingVolley {ball=3; p2_fatigue = p2_fatigue + Forehand_SwingingVolley_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_ad_stroke}
+			1: Backhand_SwingingVolley {ball=1; p2_fatigue = p2_fatigue + Backhand_SwingingVolley_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_de_stroke}
+			1: Backhand_SwingingVolley {ball=2; p2_fatigue = p2_fatigue + Backhand_SwingingVolley_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_mid_stroke}
+			1: Backhand_SwingingVolley {ball=3; p2_fatigue = p2_fatigue + Backhand_SwingingVolley_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_ad_stroke}
+			1: Trick {ball=1; p2_fatigue = p2_fatigue + Trick_Shot_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_de_stroke}
+			1: Trick {ball=2; p2_fatigue = p2_fatigue + Trick_Shot_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_mid_stroke}
+			1: Trick {ball=3; p2_fatigue = p2_fatigue + Trick_Shot_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_ad_stroke}
+			p2_fatigue * 1: Error { ball = 9} -> p2_stroke_error
+	};   // p2 hit from position 6
+
+Ply2_mid_stroke = pcase{
+			1: Smash {ball=1; p2_fatigue = p2_fatigue + Smash_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_de_stroke}
+			1: Smash {ball=2; p2_fatigue = p2_fatigue + Smash_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_mid_stroke}
+			1: Smash {ball=3; p2_fatigue = p2_fatigue + Smash_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_ad_stroke}
+			1: Forehand {ball=1; p2_fatigue = p2_fatigue + Forehand_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_de_stroke}
+			1: Forehand {ball=2; p2_fatigue = p2_fatigue + Forehand_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_mid_stroke}
+			1: Forehand {ball=3; p2_fatigue = p2_fatigue + Forehand_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_ad_stroke}
+			1: Backhand {ball=1; p2_fatigue = p2_fatigue + Backhand_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_de_stroke}
+			1: Backhand {ball=2; p2_fatigue = p2_fatigue + Backhand_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_mid_stroke}
+			1: Backhand {ball=3; p2_fatigue = p2_fatigue + Backhand_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_ad_stroke}
+			1: Forehand_Volley {ball=1; p2_fatigue = p2_fatigue + Forehand_Volley_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_de_stroke}
+			1: Forehand_Volley {ball=2; p2_fatigue = p2_fatigue + Forehand_Volley_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_mid_stroke}
+			1: Forehand_Volley {ball=3; p2_fatigue = p2_fatigue + Forehand_Volley_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_ad_stroke}
+			1: Backhand_Volley {ball=1; p2_fatigue = p2_fatigue + Backhand_Volley_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_de_stroke}
+			1: Backhand_Volley {ball=2; p2_fatigue = p2_fatigue + Backhand_Volley_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_mid_stroke}
+			1: Backhand_Volley {ball=3; p2_fatigue = p2_fatigue + Backhand_Volley_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_ad_stroke}
+			1: Forehand_ChipSlice {ball=1; p2_fatigue = p2_fatigue + Forehand_ChipSlice_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_de_stroke}
+			1: Forehand_ChipSlice {ball=2; p2_fatigue = p2_fatigue + Forehand_ChipSlice_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_mid_stroke}
+			1: Forehand_ChipSlice {ball=3; p2_fatigue = p2_fatigue + Forehand_ChipSlice_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_ad_stroke}
+			1: Backhand_Slice {ball=1; p2_fatigue = p2_fatigue + Backhand_Slice_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_de_stroke}
+			1: Backhand_Slice {ball=2; p2_fatigue = p2_fatigue + Backhand_Slice_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_mid_stroke}
+			1: Backhand_Slice {ball=3; p2_fatigue = p2_fatigue + Backhand_Slice_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_ad_stroke}
+			1: Forehand_Dropshot {ball=1; p2_fatigue = p2_fatigue + Forehand_Dropshot_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_de_stroke}
+			1: Forehand_Dropshot {ball=2; p2_fatigue = p2_fatigue + Forehand_Dropshot_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_mid_stroke}
+			1: Forehand_Dropshot {ball=3; p2_fatigue = p2_fatigue + Forehand_Dropshot_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_ad_stroke}
+			1: Backhand_Dropshot {ball=1; p2_fatigue = p2_fatigue + Backhand_Dropshot_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_de_stroke}
+			1: Backhand_Dropshot {ball=2; p2_fatigue = p2_fatigue + Backhand_Dropshot_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_mid_stroke}
+			1: Backhand_Dropshot {ball=3; p2_fatigue = p2_fatigue + Backhand_Dropshot_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_ad_stroke}
+			1: Forehand_Lob {ball=1; p2_fatigue = p2_fatigue + Forehand_Lob_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_de_stroke}
+			1: Forehand_Lob {ball=2; p2_fatigue = p2_fatigue + Forehand_Lob_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_mid_stroke}
+			1: Forehand_Lob {ball=3; p2_fatigue = p2_fatigue + Forehand_Lob_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_ad_stroke}
+			1: Backhand_Lob {ball=1; p2_fatigue = p2_fatigue + Backhand_Lob_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_de_stroke}
+			1: Backhand_Lob {ball=2; p2_fatigue = p2_fatigue + Backhand_Lob_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_mid_stroke}
+			1: Backhand_Lob {ball=3; p2_fatigue = p2_fatigue + Backhand_Lob_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_ad_stroke}
+			1: Forehand_Halfvolley {ball=1; p2_fatigue = p2_fatigue + Forehand_Halfvolley_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_de_stroke}
+			1: Forehand_Halfvolley {ball=2; p2_fatigue = p2_fatigue + Forehand_Halfvolley_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_mid_stroke}
+			1: Forehand_Halfvolley {ball=3; p2_fatigue = p2_fatigue + Forehand_Halfvolley_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_ad_stroke}
+			1: Backhand_Halfvolley {ball=1; p2_fatigue = p2_fatigue + Backhand_Halfvolley_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_de_stroke}
+			1: Backhand_Halfvolley {ball=2; p2_fatigue = p2_fatigue + Backhand_Halfvolley_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_mid_stroke}
+			1: Backhand_Halfvolley {ball=3; p2_fatigue = p2_fatigue + Backhand_Halfvolley_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_ad_stroke}
+			1: Forehand_SwingingVolley {ball=1; p2_fatigue = p2_fatigue + Forehand_SwingingVolley_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_de_stroke}
+			1: Forehand_SwingingVolley {ball=2; p2_fatigue = p2_fatigue + Forehand_SwingingVolley_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_mid_stroke}
+			1: Forehand_SwingingVolley {ball=3; p2_fatigue = p2_fatigue + Forehand_SwingingVolley_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_ad_stroke}
+			1: Backhand_SwingingVolley {ball=1; p2_fatigue = p2_fatigue + Backhand_SwingingVolley_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_de_stroke}
+			1: Backhand_SwingingVolley {ball=2; p2_fatigue = p2_fatigue + Backhand_SwingingVolley_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_mid_stroke}
+			1: Backhand_SwingingVolley {ball=3; p2_fatigue = p2_fatigue + Backhand_SwingingVolley_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_ad_stroke}
+			1: Trick {ball=1; p2_fatigue = p2_fatigue + Trick_Shot_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_de_stroke}
+			1: Trick {ball=2; p2_fatigue = p2_fatigue + Trick_Shot_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_mid_stroke}
+			1: Trick {ball=3; p2_fatigue = p2_fatigue + Trick_Shot_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_ad_stroke}
+			p2_fatigue * 1: Error { ball = 9} -> p2_stroke_error
+	};   // p2 hit from position 5
+	
+Ply2_ad_stroke = pcase{
+			1: Smash {ball=1; p2_fatigue = p2_fatigue + Smash_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_de_stroke}
+			1: Smash {ball=2; p2_fatigue = p2_fatigue + Smash_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_mid_stroke}
+			1: Smash {ball=3; p2_fatigue = p2_fatigue + Smash_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_ad_stroke}
+			1: Forehand {ball=1; p2_fatigue = p2_fatigue + Forehand_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_de_stroke}
+			1: Forehand {ball=2; p2_fatigue = p2_fatigue + Forehand_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_mid_stroke}
+			1: Forehand {ball=3; p2_fatigue = p2_fatigue + Forehand_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_ad_stroke}
+			1: Backhand {ball=1; p2_fatigue = p2_fatigue + Backhand_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_de_stroke}
+			1: Backhand {ball=2; p2_fatigue = p2_fatigue + Backhand_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_mid_stroke}
+			1: Backhand {ball=3; p2_fatigue = p2_fatigue + Backhand_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_ad_stroke}
+			1: Forehand_Volley {ball=1; p2_fatigue = p2_fatigue + Forehand_Volley_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_de_stroke}
+			1: Forehand_Volley {ball=2; p2_fatigue = p2_fatigue + Forehand_Volley_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_mid_stroke}
+			1: Forehand_Volley {ball=3; p2_fatigue = p2_fatigue + Forehand_Volley_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_ad_stroke}
+			1: Backhand_Volley {ball=1; p2_fatigue = p2_fatigue + Backhand_Volley_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_de_stroke}
+			1: Backhand_Volley {ball=2; p2_fatigue = p2_fatigue + Backhand_Volley_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_mid_stroke}
+			1: Backhand_Volley {ball=3; p2_fatigue = p2_fatigue + Backhand_Volley_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_ad_stroke}
+			1: Forehand_ChipSlice {ball=1; p2_fatigue = p2_fatigue + Forehand_ChipSlice_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_de_stroke}
+			1: Forehand_ChipSlice {ball=2; p2_fatigue = p2_fatigue + Forehand_ChipSlice_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_mid_stroke}
+			1: Forehand_ChipSlice {ball=3; p2_fatigue = p2_fatigue + Forehand_ChipSlice_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_ad_stroke}
+			1: Backhand_Slice {ball=1; p2_fatigue = p2_fatigue + Backhand_Slice_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_de_stroke}
+			1: Backhand_Slice {ball=2; p2_fatigue = p2_fatigue + Backhand_Slice_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_mid_stroke}
+			1: Backhand_Slice {ball=3; p2_fatigue = p2_fatigue + Backhand_Slice_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_ad_stroke}
+			1: Forehand_Dropshot {ball=1; p2_fatigue = p2_fatigue + Forehand_Dropshot_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_de_stroke}
+			1: Forehand_Dropshot {ball=2; p2_fatigue = p2_fatigue + Forehand_Dropshot_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_mid_stroke}
+			1: Forehand_Dropshot {ball=3; p2_fatigue = p2_fatigue + Forehand_Dropshot_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_ad_stroke}
+			1: Backhand_Dropshot {ball=1; p2_fatigue = p2_fatigue + Backhand_Dropshot_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_de_stroke}
+			1: Backhand_Dropshot {ball=2; p2_fatigue = p2_fatigue + Backhand_Dropshot_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_mid_stroke}
+			1: Backhand_Dropshot {ball=3; p2_fatigue = p2_fatigue + Backhand_Dropshot_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_ad_stroke}
+			1: Forehand_Lob {ball=1; p2_fatigue = p2_fatigue + Forehand_Lob_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_de_stroke}
+			1: Forehand_Lob {ball=2; p2_fatigue = p2_fatigue + Forehand_Lob_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_mid_stroke}
+			1: Forehand_Lob {ball=3; p2_fatigue = p2_fatigue + Forehand_Lob_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_ad_stroke}
+			1: Backhand_Lob {ball=1; p2_fatigue = p2_fatigue + Backhand_Lob_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_de_stroke}
+			1: Backhand_Lob {ball=2; p2_fatigue = p2_fatigue + Backhand_Lob_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_mid_stroke}
+			1: Backhand_Lob {ball=3; p2_fatigue = p2_fatigue + Backhand_Lob_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_ad_stroke}
+			1: Forehand_Halfvolley {ball=1; p2_fatigue = p2_fatigue + Forehand_Halfvolley_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_de_stroke}
+			1: Forehand_Halfvolley {ball=2; p2_fatigue = p2_fatigue + Forehand_Halfvolley_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_mid_stroke}
+			1: Forehand_Halfvolley {ball=3; p2_fatigue = p2_fatigue + Forehand_Halfvolley_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_ad_stroke}
+			1: Backhand_Halfvolley {ball=1; p2_fatigue = p2_fatigue + Backhand_Halfvolley_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_de_stroke}
+			1: Backhand_Halfvolley {ball=2; p2_fatigue = p2_fatigue + Backhand_Halfvolley_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_mid_stroke}
+			1: Backhand_Halfvolley {ball=3; p2_fatigue = p2_fatigue + Backhand_Halfvolley_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_ad_stroke}
+			1: Forehand_SwingingVolley {ball=1; p2_fatigue = p2_fatigue + Forehand_SwingingVolley_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_de_stroke}
+			1: Forehand_SwingingVolley {ball=2; p2_fatigue = p2_fatigue + Forehand_SwingingVolley_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_mid_stroke}
+			1: Forehand_SwingingVolley {ball=3; p2_fatigue = p2_fatigue + Forehand_SwingingVolley_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_ad_stroke}
+			1: Backhand_SwingingVolley {ball=1; p2_fatigue = p2_fatigue + Backhand_SwingingVolley_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_de_stroke}
+			1: Backhand_SwingingVolley {ball=2; p2_fatigue = p2_fatigue + Backhand_SwingingVolley_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_mid_stroke}
+			1: Backhand_SwingingVolley {ball=3; p2_fatigue = p2_fatigue + Backhand_SwingingVolley_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_ad_stroke}
+			1: Trick {ball=1; p2_fatigue = p2_fatigue + Trick_Shot_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_de_stroke}
+			1: Trick {ball=2; p2_fatigue = p2_fatigue + Trick_Shot_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_mid_stroke}
+			1: Trick {ball=3; p2_fatigue = p2_fatigue + Trick_Shot_Fatigue;} -> if (p2_fatigue > P2_STAMINA) {p2_stroke_error} else {Ply1_ad_stroke}
+			p2_fatigue * 1: Error { ball = 9} -> p2_stroke_error
+	};    // p2 hit from position 4                                                        
+
+Ply1_de_stroke = pcase{
+			1: Smash {ball=6; p1_fatigue = p1_fatigue + Smash_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_de_stroke}
+			1: Smash {ball=5; p1_fatigue = p1_fatigue + Smash_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_mid_stroke}
+			1: Smash {ball=4; p1_fatigue = p1_fatigue + Smash_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_ad_stroke}
+			1: Forehand {ball=6; p1_fatigue = p1_fatigue + Forehand_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_de_stroke}
+			1: Forehand {ball=5; p1_fatigue = p1_fatigue + Forehand_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_mid_stroke}
+			1: Forehand {ball=4; p1_fatigue = p1_fatigue + Forehand_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_ad_stroke}
+			1: Backhand {ball=6; p1_fatigue = p1_fatigue + Backhand_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_de_stroke}
+			1: Backhand {ball=5; p1_fatigue = p1_fatigue + Backhand_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_mid_stroke}
+			1: Backhand {ball=4; p1_fatigue = p1_fatigue + Backhand_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_ad_stroke}
+			1: Forehand_Volley {ball=6; p1_fatigue = p1_fatigue + Forehand_Volley_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_de_stroke}
+			1: Forehand_Volley {ball=5; p1_fatigue = p1_fatigue + Forehand_Volley_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_mid_stroke}
+			1: Forehand_Volley {ball=4; p1_fatigue = p1_fatigue + Forehand_Volley_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_ad_stroke}
+			1: Backhand_Volley {ball=6; p1_fatigue = p1_fatigue + Backhand_Volley_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_de_stroke}
+			1: Backhand_Volley {ball=5; p1_fatigue = p1_fatigue + Backhand_Volley_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_mid_stroke}
+			1: Backhand_Volley {ball=4; p1_fatigue = p1_fatigue + Backhand_Volley_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_ad_stroke}
+			1: Forehand_ChipSlice {ball=6; p1_fatigue = p1_fatigue + Forehand_ChipSlice_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_de_stroke}
+			1: Forehand_ChipSlice {ball=5; p1_fatigue = p1_fatigue + Forehand_ChipSlice_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_mid_stroke}
+			1: Forehand_ChipSlice {ball=4; p1_fatigue = p1_fatigue + Forehand_ChipSlice_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_ad_stroke}
+			1: Backhand_Slice {ball=6; p1_fatigue = p1_fatigue + Backhand_Slice_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_de_stroke}
+			1: Backhand_Slice {ball=5; p1_fatigue = p1_fatigue + Backhand_Slice_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_mid_stroke}
+			1: Backhand_Slice {ball=4; p1_fatigue = p1_fatigue + Backhand_Slice_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_ad_stroke}
+			1: Forehand_Dropshot {ball=6; p1_fatigue = p1_fatigue + Forehand_Dropshot_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_de_stroke}
+			1: Forehand_Dropshot {ball=5; p1_fatigue = p1_fatigue + Forehand_Dropshot_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_mid_stroke}
+			1: Forehand_Dropshot {ball=4; p1_fatigue = p1_fatigue + Forehand_Dropshot_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_ad_stroke}
+			1: Backhand_Dropshot {ball=6; p1_fatigue = p1_fatigue + Backhand_Dropshot_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_de_stroke}
+			1: Backhand_Dropshot {ball=5; p1_fatigue = p1_fatigue + Backhand_Dropshot_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_mid_stroke}
+			1: Backhand_Dropshot {ball=4; p1_fatigue = p1_fatigue + Backhand_Dropshot_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_ad_stroke}
+			1: Forehand_Lob {ball=6; p1_fatigue = p1_fatigue + Forehand_Lob_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_de_stroke}
+			1: Forehand_Lob {ball=5; p1_fatigue = p1_fatigue + Forehand_Lob_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_mid_stroke}
+			1: Forehand_Lob {ball=4; p1_fatigue = p1_fatigue + Forehand_Lob_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_ad_stroke}
+			1: Backhand_Lob {ball=6; p1_fatigue = p1_fatigue + Backhand_Lob_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_de_stroke}
+			1: Backhand_Lob {ball=5; p1_fatigue = p1_fatigue + Backhand_Lob_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_mid_stroke}
+			1: Backhand_Lob {ball=4; p1_fatigue = p1_fatigue + Backhand_Lob_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_ad_stroke}
+			1: Forehand_Halfvolley {ball=6; p1_fatigue = p1_fatigue + Forehand_Halfvolley_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_de_stroke}
+			1: Forehand_Halfvolley {ball=5; p1_fatigue = p1_fatigue + Forehand_Halfvolley_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_mid_stroke}
+			1: Forehand_Halfvolley {ball=4; p1_fatigue = p1_fatigue + Forehand_Halfvolley_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_ad_stroke}
+			1: Backhand_Halfvolley {ball=6; p1_fatigue = p1_fatigue + Backhand_Halfvolley_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_de_stroke}
+			1: Backhand_Halfvolley {ball=5; p1_fatigue = p1_fatigue + Backhand_Halfvolley_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_mid_stroke}
+			1: Backhand_Halfvolley {ball=4; p1_fatigue = p1_fatigue + Backhand_Halfvolley_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_ad_stroke}
+			1: Forehand_SwingingVolley {ball=6; p1_fatigue = p1_fatigue + Forehand_SwingingVolley_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_de_stroke}
+			1: Forehand_SwingingVolley {ball=5; p1_fatigue = p1_fatigue + Forehand_SwingingVolley_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_mid_stroke}
+			1: Forehand_SwingingVolley {ball=4; p1_fatigue = p1_fatigue + Forehand_SwingingVolley_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_ad_stroke}
+			1: Backhand_SwingingVolley {ball=6; p1_fatigue = p1_fatigue + Backhand_SwingingVolley_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_de_stroke}
+			1: Backhand_SwingingVolley {ball=5; p1_fatigue = p1_fatigue + Backhand_SwingingVolley_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_mid_stroke}
+			1: Backhand_SwingingVolley {ball=4; p1_fatigue = p1_fatigue + Backhand_SwingingVolley_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_ad_stroke}
+			1: Trick {ball=6; p1_fatigue = p1_fatigue + Trick_Shot_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_de_stroke}
+			1: Trick {ball=5; p1_fatigue = p1_fatigue + Trick_Shot_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_mid_stroke}
+			1: Trick {ball=4; p1_fatigue = p1_fatigue + Trick_Shot_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_ad_stroke}
+			p1_fatigue * 1: Error { ball = 9} -> p1_stroke_error 		                                                            
+	}; // p1 hit from position 1
+
+Ply1_mid_stroke = pcase{
+			1: Smash {ball=6; p1_fatigue = p1_fatigue + Smash_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_de_stroke}
+			1: Smash {ball=5; p1_fatigue = p1_fatigue + Smash_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_mid_stroke}
+			1: Smash {ball=4; p1_fatigue = p1_fatigue + Smash_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_ad_stroke}
+			1: Forehand {ball=6; p1_fatigue = p1_fatigue + Forehand_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_de_stroke}
+			1: Forehand {ball=5; p1_fatigue = p1_fatigue + Forehand_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_mid_stroke}
+			1: Forehand {ball=4; p1_fatigue = p1_fatigue + Forehand_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_ad_stroke}
+			1: Backhand {ball=6; p1_fatigue = p1_fatigue + Backhand_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_de_stroke}
+			1: Backhand {ball=5; p1_fatigue = p1_fatigue + Backhand_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_mid_stroke}
+			1: Backhand {ball=4; p1_fatigue = p1_fatigue + Backhand_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_ad_stroke}
+			1: Forehand_Volley {ball=6; p1_fatigue = p1_fatigue + Forehand_Volley_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_de_stroke}
+			1: Forehand_Volley {ball=5; p1_fatigue = p1_fatigue + Forehand_Volley_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_mid_stroke}
+			1: Forehand_Volley {ball=4; p1_fatigue = p1_fatigue + Forehand_Volley_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_ad_stroke}
+			1: Backhand_Volley {ball=6; p1_fatigue = p1_fatigue + Backhand_Volley_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_de_stroke}
+			1: Backhand_Volley {ball=5; p1_fatigue = p1_fatigue + Backhand_Volley_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_mid_stroke}
+			1: Backhand_Volley {ball=4; p1_fatigue = p1_fatigue + Backhand_Volley_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_ad_stroke}
+			1: Forehand_ChipSlice {ball=6; p1_fatigue = p1_fatigue + Forehand_ChipSlice_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_de_stroke}
+			1: Forehand_ChipSlice {ball=5; p1_fatigue = p1_fatigue + Forehand_ChipSlice_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_mid_stroke}
+			1: Forehand_ChipSlice {ball=4; p1_fatigue = p1_fatigue + Forehand_ChipSlice_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_ad_stroke}
+			1: Backhand_Slice {ball=6; p1_fatigue = p1_fatigue + Backhand_Slice_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_de_stroke}
+			1: Backhand_Slice {ball=5; p1_fatigue = p1_fatigue + Backhand_Slice_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_mid_stroke}
+			1: Backhand_Slice {ball=4; p1_fatigue = p1_fatigue + Backhand_Slice_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_ad_stroke}
+			1: Forehand_Dropshot {ball=6; p1_fatigue = p1_fatigue + Forehand_Dropshot_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_de_stroke}
+			1: Forehand_Dropshot {ball=5; p1_fatigue = p1_fatigue + Forehand_Dropshot_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_mid_stroke}
+			1: Forehand_Dropshot {ball=4; p1_fatigue = p1_fatigue + Forehand_Dropshot_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_ad_stroke}
+			1: Backhand_Dropshot {ball=6; p1_fatigue = p1_fatigue + Backhand_Dropshot_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_de_stroke}
+			1: Backhand_Dropshot {ball=5; p1_fatigue = p1_fatigue + Backhand_Dropshot_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_mid_stroke}
+			1: Backhand_Dropshot {ball=4; p1_fatigue = p1_fatigue + Backhand_Dropshot_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_ad_stroke}
+			1: Forehand_Lob {ball=6; p1_fatigue = p1_fatigue + Forehand_Lob_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_de_stroke}
+			1: Forehand_Lob {ball=5; p1_fatigue = p1_fatigue + Forehand_Lob_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_mid_stroke}
+			1: Forehand_Lob {ball=4; p1_fatigue = p1_fatigue + Forehand_Lob_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_ad_stroke}
+			1: Backhand_Lob {ball=6; p1_fatigue = p1_fatigue + Backhand_Lob_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_de_stroke}
+			1: Backhand_Lob {ball=5; p1_fatigue = p1_fatigue + Backhand_Lob_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_mid_stroke}
+			1: Backhand_Lob {ball=4; p1_fatigue = p1_fatigue + Backhand_Lob_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_ad_stroke}
+			1: Forehand_Halfvolley {ball=6; p1_fatigue = p1_fatigue + Forehand_Halfvolley_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_de_stroke}
+			1: Forehand_Halfvolley {ball=5; p1_fatigue = p1_fatigue + Forehand_Halfvolley_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_mid_stroke}
+			1: Forehand_Halfvolley {ball=4; p1_fatigue = p1_fatigue + Forehand_Halfvolley_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_ad_stroke}
+			1: Backhand_Halfvolley {ball=6; p1_fatigue = p1_fatigue + Backhand_Halfvolley_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_de_stroke}
+			1: Backhand_Halfvolley {ball=5; p1_fatigue = p1_fatigue + Backhand_Halfvolley_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_mid_stroke}
+			1: Backhand_Halfvolley {ball=4; p1_fatigue = p1_fatigue + Backhand_Halfvolley_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_ad_stroke}
+			1: Forehand_SwingingVolley {ball=6; p1_fatigue = p1_fatigue + Forehand_SwingingVolley_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_de_stroke}
+			1: Forehand_SwingingVolley {ball=5; p1_fatigue = p1_fatigue + Forehand_SwingingVolley_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_mid_stroke}
+			1: Forehand_SwingingVolley {ball=4; p1_fatigue = p1_fatigue + Forehand_SwingingVolley_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_ad_stroke}
+			1: Backhand_SwingingVolley {ball=6; p1_fatigue = p1_fatigue + Backhand_SwingingVolley_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_de_stroke}
+			1: Backhand_SwingingVolley {ball=5; p1_fatigue = p1_fatigue + Backhand_SwingingVolley_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_mid_stroke}
+			1: Backhand_SwingingVolley {ball=4; p1_fatigue = p1_fatigue + Backhand_SwingingVolley_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_ad_stroke}
+			1: Trick {ball=6; p1_fatigue = p1_fatigue + Trick_Shot_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_de_stroke}
+			1: Trick {ball=5; p1_fatigue = p1_fatigue + Trick_Shot_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_mid_stroke}
+			1: Trick {ball=4; p1_fatigue = p1_fatigue + Trick_Shot_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_ad_stroke}
+			p1_fatigue * 1: Error { ball = 9} -> p1_stroke_error 	
+	}; //p1 hit from position 2
+
+Ply1_ad_stroke = pcase{
+			1: Smash {ball=6; p1_fatigue = p1_fatigue + Smash_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_de_stroke}
+			1: Smash {ball=5; p1_fatigue = p1_fatigue + Smash_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_mid_stroke}
+			1: Smash {ball=4; p1_fatigue = p1_fatigue + Smash_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_ad_stroke}
+			1: Forehand {ball=6; p1_fatigue = p1_fatigue + Forehand_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_de_stroke}
+			1: Forehand {ball=5; p1_fatigue = p1_fatigue + Forehand_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_mid_stroke}
+			1: Forehand {ball=4; p1_fatigue = p1_fatigue + Forehand_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_ad_stroke}
+			1: Backhand {ball=6; p1_fatigue = p1_fatigue + Backhand_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_de_stroke}
+			1: Backhand {ball=5; p1_fatigue = p1_fatigue + Backhand_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_mid_stroke}
+			1: Backhand {ball=4; p1_fatigue = p1_fatigue + Backhand_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_ad_stroke}
+			1: Forehand_Volley {ball=6; p1_fatigue = p1_fatigue + Forehand_Volley_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_de_stroke}
+			1: Forehand_Volley {ball=5; p1_fatigue = p1_fatigue + Forehand_Volley_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_mid_stroke}
+			1: Forehand_Volley {ball=4; p1_fatigue = p1_fatigue + Forehand_Volley_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_ad_stroke}
+			1: Backhand_Volley {ball=6; p1_fatigue = p1_fatigue + Backhand_Volley_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_de_stroke}
+			1: Backhand_Volley {ball=5; p1_fatigue = p1_fatigue + Backhand_Volley_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_mid_stroke}
+			1: Backhand_Volley {ball=4; p1_fatigue = p1_fatigue + Backhand_Volley_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_ad_stroke}
+			1: Forehand_ChipSlice {ball=6; p1_fatigue = p1_fatigue + Forehand_ChipSlice_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_de_stroke}
+			1: Forehand_ChipSlice {ball=5; p1_fatigue = p1_fatigue + Forehand_ChipSlice_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_mid_stroke}
+			1: Forehand_ChipSlice {ball=4; p1_fatigue = p1_fatigue + Forehand_ChipSlice_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_ad_stroke}
+			1: Backhand_Slice {ball=6; p1_fatigue = p1_fatigue + Backhand_Slice_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_de_stroke}
+			1: Backhand_Slice {ball=5; p1_fatigue = p1_fatigue + Backhand_Slice_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_mid_stroke}
+			1: Backhand_Slice {ball=4; p1_fatigue = p1_fatigue + Backhand_Slice_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_ad_stroke}
+			1: Forehand_Dropshot {ball=6; p1_fatigue = p1_fatigue + Forehand_Dropshot_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_de_stroke}
+			1: Forehand_Dropshot {ball=5; p1_fatigue = p1_fatigue + Forehand_Dropshot_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_mid_stroke}
+			1: Forehand_Dropshot {ball=4; p1_fatigue = p1_fatigue + Forehand_Dropshot_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_ad_stroke}
+			1: Backhand_Dropshot {ball=6; p1_fatigue = p1_fatigue + Backhand_Dropshot_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_de_stroke}
+			1: Backhand_Dropshot {ball=5; p1_fatigue = p1_fatigue + Backhand_Dropshot_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_mid_stroke}
+			1: Backhand_Dropshot {ball=4; p1_fatigue = p1_fatigue + Backhand_Dropshot_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_ad_stroke}
+			1: Forehand_Lob {ball=6; p1_fatigue = p1_fatigue + Forehand_Lob_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_de_stroke}
+			1: Forehand_Lob {ball=5; p1_fatigue = p1_fatigue + Forehand_Lob_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_mid_stroke}
+			1: Forehand_Lob {ball=4; p1_fatigue = p1_fatigue + Forehand_Lob_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_ad_stroke}
+			1: Backhand_Lob {ball=6; p1_fatigue = p1_fatigue + Backhand_Lob_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_de_stroke}
+			1: Backhand_Lob {ball=5; p1_fatigue = p1_fatigue + Backhand_Lob_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_mid_stroke}
+			1: Backhand_Lob {ball=4; p1_fatigue = p1_fatigue + Backhand_Lob_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_ad_stroke}
+			1: Forehand_Halfvolley {ball=6; p1_fatigue = p1_fatigue + Forehand_Halfvolley_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_de_stroke}
+			1: Forehand_Halfvolley {ball=5; p1_fatigue = p1_fatigue + Forehand_Halfvolley_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_mid_stroke}
+			1: Forehand_Halfvolley {ball=4; p1_fatigue = p1_fatigue + Forehand_Halfvolley_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_ad_stroke}
+			1: Backhand_Halfvolley {ball=6; p1_fatigue = p1_fatigue + Backhand_Halfvolley_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_de_stroke}
+			1: Backhand_Halfvolley {ball=5; p1_fatigue = p1_fatigue + Backhand_Halfvolley_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_mid_stroke}
+			1: Backhand_Halfvolley {ball=4; p1_fatigue = p1_fatigue + Backhand_Halfvolley_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_ad_stroke}
+			1: Forehand_SwingingVolley {ball=6; p1_fatigue = p1_fatigue + Forehand_SwingingVolley_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_de_stroke}
+			1: Forehand_SwingingVolley {ball=5; p1_fatigue = p1_fatigue + Forehand_SwingingVolley_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_mid_stroke}
+			1: Forehand_SwingingVolley {ball=4; p1_fatigue = p1_fatigue + Forehand_SwingingVolley_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_ad_stroke}
+			1: Backhand_SwingingVolley {ball=6; p1_fatigue = p1_fatigue + Backhand_SwingingVolley_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_de_stroke}
+			1: Backhand_SwingingVolley {ball=5; p1_fatigue = p1_fatigue + Backhand_SwingingVolley_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_mid_stroke}
+			1: Backhand_SwingingVolley {ball=4; p1_fatigue = p1_fatigue + Backhand_SwingingVolley_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_ad_stroke}
+			1: Trick {ball=6; p1_fatigue = p1_fatigue + Trick_Shot_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_de_stroke}
+			1: Trick {ball=5; p1_fatigue = p1_fatigue + Trick_Shot_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_mid_stroke}
+			1: Trick {ball=4; p1_fatigue = p1_fatigue + Trick_Shot_Fatigue} -> if (p1_fatigue > P1_STAMINA) {p1_stroke_error} else {Ply2_ad_stroke}
+			p1_fatigue * 1: Error { ball = 9} -> p1_stroke_error 	
+	}; // p1 hit from position 3
+
+
+
