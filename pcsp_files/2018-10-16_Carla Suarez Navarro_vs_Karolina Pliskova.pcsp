@@ -1,0 +1,346 @@
+#define p2_24 163;
+#define p2_23 405;
+#define p2_22 302;
+#define p2_21 129;
+#define p2_20 144;
+#define p2_19 307;
+#define p2_18 276;
+#define p2_17 273;
+#define p2_16 213;
+#define p2_15 141;
+#define p2_14 222;
+#define p2_13 422;
+#define p2_12 137;
+#define p2_11 722;
+#define p2_10 141;
+#define p2_9 396;
+#define p2_8 311;
+#define p2_7 291;
+#define p2_6 131;
+#define p2_5 245;
+#define p2_4 624;
+#define p2_3 364;
+#define p2_2 228;
+#define p2_1 406;
+#define p1_24 161;
+#define p1_23 460;
+#define p1_22 287;
+#define p1_21 92;
+#define p1_20 129;
+#define p1_19 296;
+#define p1_18 310;
+#define p1_17 265;
+#define p1_16 178;
+#define p1_15 188;
+#define p1_14 326;
+#define p1_13 308;
+#define p1_12 86;
+#define p1_11 870;
+#define p1_10 44;
+#define p1_9 340;
+#define p1_8 388;
+#define p1_7 270;
+#define p1_6 91;
+#define p1_5 236;
+#define p1_4 672;
+#define p1_3 322;
+#define p1_2 183;
+#define p1_1 492;
+//Player 1: Carla Suarez Navarro, Player 2: Karolina Pliskova// ***MatchName***
+//       *****
+//    Player1
+// de_ct  mid  ad_ct
+// -----+-----+-----
+// |    |     |    |
+// | 1  |  2  | 3  |
+// |    |     |    |
+// |===============|
+// |    |     |    |
+// | 4  |  5  | 6  |
+// |    |     |    |
+// -----+-----+-----
+// ad_ct  mid  de_ct
+//    Player2
+//       *****
+
+//variable declarations
+enum{p1_ad_ct, p1_de_ct, p2_ad_ct, p2_de_ct}; //serve position: ad court or deuce court
+enum{player1, player2, na};
+#define end_score 3;
+#define P1_STAMINA 7; // stamina maybe can get from their elo ranking or some player statistics source?
+#define P2_STAMINA 7;
+var turn = na; //serve turn;
+var p1score = 0;
+var p2score = 0;
+var won = na;
+var ball = 9; // indicate that ball is not in any court now
+var p1_fatigue: {1..(P1_STAMINA + 10)} = 1; // multiply error probabilities by the fatigue level (maybe can just add or sth)
+var p2_fatigue: {1..(P2_STAMINA + 10)} = 1;
+
+// indicate the position of the player
+var p1_pos_in_court: {0..3} = 0; // indicate player is not yet in court
+var p2_pos_in_court: {4..7} = 7; // indicate player is not yet in court
+var p1_from_pos_in_court: {0..3} = p1_pos_in_court; // default values
+var p2_from_pos_in_court: {4..7} = p2_pos_in_court; // default values
+
+// This is how the game itself will be launched
+TieBreakGame = WhoServe1st; (Player1Serve [] Player2Serve);
+
+// This is how the game starts/continues (e.g. Player1Serve/Player2Serve until win condition eventually reached), notice that NextPt is called on every error
+NextPt = Player1Serve [] Player2Serve [] ([won != na] GameOver -> Skip);
+
+// Event to determine who serves first, basically 50/50
+WhoServe1st = []i:{p1_de_ct,p2_de_ct}@ TossCoin{turn = i} -> Skip;
+
+// Service events, after WhoServe1st in TieBreakGame runs sequentially, either Player1Serve or Player2Serve can run (general choice)
+// initialise court position to serve and receive serve positions
+Player1Serve = [won == na && turn == p1_de_ct] p1Ready_DeCt{ p1_pos_in_court=1; p2_pos_in_court=6; } -> De_Ply1Serve [] [won == na && turn == p1_ad_ct] p1Ready_AdCt{ p1_pos_in_court=3; p2_pos_in_court=4; } -> Ad_Ply1Serve;
+Player2Serve = [won == na && turn == p2_de_ct] p2Ready_DeCt{ p1_pos_in_court=1; p2_pos_in_court=6; } -> De_Ply2Serve [] [won == na && turn == p2_ad_ct] p2Ready_AdCt{ p1_pos_in_court=3; p2_pos_in_court=4; } -> Ad_Ply2Serve;
+
+// Error events, increment score and check for win condition, then call NextPt (which has GameOver -> Skip)
+p1_stroke_error = {p2score++; if (p1_fatigue * 3/4 > 1) { p1_fatigue = p1_fatigue * 3/4 }; if (p2_fatigue * 3/4 > 1) { p2_fatigue = p2_fatigue * 3/4 }; if (p2score==end_score) {won=player2};  turn=((turn+1)%4)} -> NextPt;
+p2_stroke_error = {p1score++; if (p1_fatigue * 3/4 > 1) { p1_fatigue = p1_fatigue * 3/4 }; if (p2_fatigue * 3/4 > 1) { p2_fatigue = p2_fatigue * 3/4 }; if (p1score==end_score) {won=player1};  turn=((turn+1)%4);} -> NextPt;
+
+// Endgame conditions/assertions
+#define player1Win won == player1;
+#define player2Win won == player2;
+#assert TieBreakGame reaches player1Win with prob;
+#assert TieBreakGame reaches player2Win with prob;
+#assert TieBreakGame deadlockfree;
+
+// reusable functions
+#define updateP2Fatigue { p2_from_pos_in_court=p2_pos_in_court; p2_pos_in_court=ball; if (p2_pos_in_court - p2_from_pos_in_court < 0) { p2_fatigue = p2_fatigue + (-1 * (p2_pos_in_court - p2_from_pos_in_court)) } else { p2_fatigue = p2_fatigue + p2_pos_in_court - p2_from_pos_in_court } };
+#define updateP1Fatigue { p1_from_pos_in_court=p1_pos_in_court; p1_pos_in_court=ball; if (p1_pos_in_court - p1_from_pos_in_court < 0)  { p1_fatigue = p1_fatigue + (-1 * (p1_pos_in_court - p1_from_pos_in_court)) } else { p1_fatigue = p1_fatigue + p1_pos_in_court - p1_from_pos_in_court } };
+
+
+// Service probabilities, basically need fill in with the PlyX_BackhandR and Ply2_ForeHandR is basically the service return shot, 2nd serve is if 1st serve is erroneous
+De_Ply1Serve = pcase {                            
+		p1_1: ServeToDeuce{
+          ball=6;
+        } -> Ply2_de_stroke
+		p1_2: ServeToMid{
+          ball=5; // ball lands at pos 5
+        } -> Ply2_mid_stroke 
+		p1_3: Serve_err {  // 1st serve is total 2/ total 1
+          ball=9;
+        } -> De_Ply1Serve_2nd
+    };
+
+De_Ply1Serve_2nd = pcase {
+		p1_4: ServeToDeuce{
+          ball=6;
+        } -> Ply2_de_stroke
+		p1_5: ServeToMid{
+          ball=5;
+        } -> Ply2_mid_stroke  
+		p1_6: Serve_err{
+          ball=9;
+        } -> Fdoublefault {
+            p2score++;
+            if (p2score == end_score) { won = player2 }
+            else { turn = (turn+1)%4 }
+          } -> NextPt
+      };
+
+Ad_Ply1Serve = pcase {
+		p1_7: ServeToMid{
+          ball=5;
+        } -> Ply2_mid_stroke  
+		p1_8: ServeToAd{
+          ball=4;
+        } -> Ply2_ad_stroke
+		p1_9: Serve_err{
+          ball=9;
+        } -> Ad_Ply1Serve_2nd
+      };
+
+Ad_Ply1Serve_2nd = pcase {                 //1st serve is out
+		p1_10: ServeToMid{
+          ball= 5;
+        } -> Ply2_mid_stroke
+		p1_11: ServeToAd{
+          ball=4;
+        } -> Ply2_ad_stroke
+		p1_12: Serve_err{
+          ball=9;
+        } -> Fdoublefault{
+            p2score++;
+            if (p2score == end_score) {won = player2}
+            else { turn = (turn+1)%4}
+          } -> NextPt
+      };    
+     
+De_Ply2Serve = pcase {
+		p2_1: ServeToDeuce{
+          ball=1;
+        } -> Ply1_de_stroke
+        p2_2: ServeToMid{
+          ball=2;
+        } -> Ply1_mid_stroke
+		p2_3: Serve_err{
+          ball=9;
+        } -> De_Ply2Serve_2nd
+      };
+
+De_Ply2Serve_2nd = pcase {                 //1st serve is out
+		p2_4: ServeToDeuce{
+          ball=1;
+        } -> Ply1_de_stroke
+		p2_5: ServeToMid{
+          ball=2;
+        } -> Ply1_mid_stroke
+		p2_6: Serve_err{
+          ball=9;
+        } -> Ndoublefault{
+            p1score++;
+            if (p1score == end_score) {won = player1}
+            else { turn = (turn+1)%4}
+          } -> NextPt
+      };
+     
+Ad_Ply2Serve = pcase {
+		p2_7: ServeToMid{
+          ball=2;
+        } -> Ply1_mid_stroke
+		p2_8: ServeToAd{
+          ball=3;
+        } -> Ply1_ad_stroke
+		p2_9: Serve_err{
+          ball=9;
+        } -> Ad_Ply2Serve_2nd
+      };
+
+Ad_Ply2Serve_2nd = pcase {                 //1st serve is out
+		p2_10: ServeToMid{
+          ball=2;
+        } -> Ply1_mid_stroke
+		p2_11: ServeToAd{
+          ball=3;
+        } -> Ply1_ad_stroke
+		p2_12: Serve_err{
+          ball=9;
+        } -> Ndoublefault{
+            p1score++;
+            if (p1score == end_score) {won = player1}
+            else { turn = (turn+1)%4}
+          }-> NextPt
+      };
+
+
+// These are stroke probabilities that the player will perform each shot, and which court he performs it to. Alternates between p1_stroke and p2_stroke until an error occurs.
+Ply2_de_stroke = pcase {
+	p2_13: ReturnToDe {
+        updateP2Fatigue;
+        ball=1;
+      } -> if (p2_fatigue >P2_STAMINA) { p2_stroke_error } else { Ply1_de_stroke }
+    p2_14: ReturnToMid {
+        updateP2Fatigue;
+        ball=2;
+      } -> if (p2_fatigue >P2_STAMINA) { p2_stroke_error } else { Ply1_mid_stroke }
+    p2_15: ReturnToAd {
+        updateP2Fatigue;
+        ball=3;
+      } -> if (p2_fatigue >P2_STAMINA) { p2_stroke_error } else { Ply1_ad_stroke }
+    p2_16 * p2_fatigue * p2_fatigue: Error {
+        updateP2Fatigue;
+        ball=9;
+      } -> p2_stroke_error
+  };
+
+Ply2_mid_stroke = pcase {
+    p2_17: ReturnToDe {
+        updateP2Fatigue;
+        ball=1;
+      } -> if (p2_fatigue >P2_STAMINA) { p2_stroke_error } else { Ply1_de_stroke }
+    p2_18: ReturnToMid {
+        updateP2Fatigue;
+        ball=2;
+      } -> if (p2_fatigue >P2_STAMINA) { p2_stroke_error } else { Ply1_mid_stroke }
+    p2_19: ReturnToAd {
+        updateP2Fatigue;
+        ball=3;
+      } -> if (p2_fatigue >P2_STAMINA) { p2_stroke_error } else { Ply1_ad_stroke }
+    p2_20 * p2_fatigue * p2_fatigue: Error {
+        updateP2Fatigue;
+        ball=9;
+      } -> p2_stroke_error
+  };
+
+Ply2_ad_stroke = pcase {
+    p2_21: ReturnToDe {
+        updateP2Fatigue;
+        ball=1;
+      } -> if (p2_fatigue >P2_STAMINA) { p2_stroke_error } else { Ply1_de_stroke }
+    p2_22: ReturnToMid {
+        updateP2Fatigue;
+        ball=2;
+      } -> if (p2_fatigue >P2_STAMINA) { p2_stroke_error } else { Ply1_mid_stroke }
+    p2_23: ReturnToAd {
+        updateP2Fatigue;
+        ball=3;
+      } -> if (p2_fatigue >P2_STAMINA) { p2_stroke_error } else { Ply1_ad_stroke }
+    p2_24 * p2_fatigue * p2_fatigue: Error {
+        updateP2Fatigue;
+        ball=9;
+      } -> p2_stroke_error
+  };
+
+Ply1_de_stroke = pcase {
+    p1_13: ReturnToDeuce {
+        updateP1Fatigue;
+        ball=6;
+      } -> if (p1_fatigue > P1_STAMINA) { p1_stroke_error } else { Ply2_de_stroke }
+    
+    p1_14: ReturnToMid {
+        updateP1Fatigue;
+        ball=5;
+      } -> if (p1_fatigue > P1_STAMINA) { p1_stroke_error } else { Ply2_mid_stroke }  
+    
+    p1_15: ReturnToAd {
+        updateP1Fatigue;
+        ball=4;
+      } -> if (p1_fatigue > P1_STAMINA) { p1_stroke_error } else { Ply2_ad_stroke }
+    
+    p1_16 * p1_fatigue * p1_fatigue: Error {
+        updateP1Fatigue;
+        ball=9;
+      } -> p1_stroke_error
+  };
+
+Ply1_mid_stroke = pcase {
+    p1_17: ReturnToDeuce {
+        updateP1Fatigue;
+        ball=6;
+      } -> if (p1_fatigue > P1_STAMINA) { p1_stroke_error } else { Ply2_de_stroke }
+    p1_18: ReturnToMid {
+        updateP1Fatigue;
+        ball=5;
+      } -> if (p1_fatigue > P1_STAMINA) { p1_stroke_error } else { Ply2_mid_stroke }
+    p1_19: ReturnToAd {
+        updateP1Fatigue;
+        ball=4;
+      } -> if (p1_fatigue > P1_STAMINA) { p1_stroke_error } else { Ply2_ad_stroke }
+    p1_20 * p1_fatigue * p1_fatigue: Error {
+        updateP1Fatigue;
+        ball=9;
+      } -> p1_stroke_error
+  };
+
+Ply1_ad_stroke = pcase {
+    p1_21: ReturnToDeuce {
+        updateP1Fatigue;
+        ball=6;
+      } -> if (p1_fatigue > P1_STAMINA) { p1_stroke_error } else { Ply2_de_stroke }
+    p1_22: ReturnToMid {
+        updateP1Fatigue;
+        ball=5;
+      } -> if (p1_fatigue > P1_STAMINA) { p1_stroke_error } else { Ply2_mid_stroke }
+    p1_23: ReturnToAd {
+        updateP1Fatigue;
+        ball=4;
+      } -> if (p1_fatigue > P1_STAMINA) { p1_stroke_error } else { Ply2_ad_stroke }
+    p1_24 * p1_fatigue * p1_fatigue: Error {
+        updateP1Fatigue;
+        ball=9;
+      } -> p1_stroke_error
+  };
