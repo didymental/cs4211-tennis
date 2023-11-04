@@ -18,7 +18,7 @@
 //variable declarations
 enum{p1_ad_ct, p1_de_ct, p2_ad_ct, p2_de_ct}; //serve position: ad court or deuce court
 enum{player1, player2, na};
-#define end_score 3;
+#define end_score 1;
 #define P1_STAMINA 7; // stamina maybe can get from their elo ranking or some player statistics source?
 #define P2_STAMINA 7;
 var turn = na; //serve turn;
