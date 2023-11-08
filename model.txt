@@ -48,7 +48,7 @@ var p2_from_pos_in_court: {4..7} = p2_pos_in_court; // default values
 TieBreakGame = WhoServe1st; (Player1Serve [] Player2Serve);
 
 // This is how the game starts/continues (e.g. Player1Serve/Player2Serve until win condition eventually reached), notice that NextPt is called on every error
-NextPt = Player1Serve [] Player2Serve [] ([won != na] GameOver -> Skip);
+NextPt = Player1Serve [] Player2Serve [] ([won != na] GameOver -> Skip); 
 
 // Event to determine who serves first, basically 50/50
 WhoServe1st = []i:{p1_de_ct,p2_de_ct}@ TossCoin{turn = i} -> Skip;
@@ -60,9 +60,11 @@ Player2Serve = [won == na && turn == p2_de_ct] p2Ready_DeCt{ p1_pos_in_court=1; 
 
 // Error events, increment score and check for win condition, then call NextPt (which has GameOver -> Skip)
 p1_stroke_error = {
+  p1_rally = 0; p2_rally = 0;
   p2score++;
   if (p1_fatigue * recovery_rate > 1) { p1_fatigue = p1_fatigue * recovery_rate }; if (p2_fatigue * recovery_rate > 1) { p2_fatigue = p2_fatigue * recovery_rate }; if (p2score==end_score) {won=player2};  turn=((turn+1)%4)} -> NextPt;
 p2_stroke_error = {
+  p1_rally = 0; p2_rally = 0;
   p1score++;
   if (p1_fatigue * recovery_rate > 1) { p1_fatigue = p1_fatigue * recovery_rate }; if (p2_fatigue * recovery_rate > 1) { p2_fatigue = p2_fatigue * recovery_rate }; if (p1score==end_score) {won=player1};  turn=((turn+1)%4);} -> NextPt;
 
@@ -90,7 +92,7 @@ De_Ply1Serve = pcase {
           p1_rally = 1;
           ball=5; // ball lands at pos 5
         } -> Ply2_mid_stroke 
-		p1_3 * p1_fatigue / p1_max_fatigue * error_mult: Serve_err {  // 1st serve is total 2/ total 1
+		p1_3 + p1_3 * p1_fatigue / p1_max_fatigue * error_mult: Serve_err {  // 1st serve is total 2/ total 1
           ball=9;
         } -> De_Ply1Serve_2nd
     };
@@ -104,7 +106,7 @@ De_Ply1Serve_2nd = pcase {
           p1_rally = 1;
           ball=5;
         } -> Ply2_mid_stroke  
-		p1_6 * p1_fatigue / p1_max_fatigue * error_mult: Serve_err{
+		p1_6 + p1_6 * p1_fatigue / p1_max_fatigue * error_mult: Serve_err{
           ball=9;
         } -> Fdoublefault {
             p2score++;
@@ -122,7 +124,7 @@ Ad_Ply1Serve = pcase {
           p1_rally = 1;
           ball=4;
         } -> Ply2_ad_stroke
-		p1_9 * p1_fatigue / p1_max_fatigue * error_mult: Serve_err{
+		p1_9 + p1_9 * p1_fatigue / p1_max_fatigue * error_mult: Serve_err{
           ball=9;
         } -> Ad_Ply1Serve_2nd
       };
@@ -136,7 +138,7 @@ Ad_Ply1Serve_2nd = pcase {                 //1st serve is out
           p1_rally = 1;
           ball=4;
         } -> Ply2_ad_stroke
-		p1_12 * p1_fatigue / p1_max_fatigue * error_mult: Serve_err{
+		p1_12 + p1_12 * p1_fatigue / p1_max_fatigue * error_mult: Serve_err{
           p1_rally = p1_rally * p1_rally;
           ball=9;
         } -> Fdoublefault{
@@ -155,7 +157,7 @@ De_Ply2Serve = pcase {
           p2_rally = 1;
           ball=2;
         } -> Ply1_mid_stroke
-		p2_3 * p2_fatigue / p2_max_fatigue * error_mult: Serve_err{
+		p2_3 + p2_3 * p2_fatigue / p2_max_fatigue * error_mult: Serve_err{
           ball=9;
         } -> De_Ply2Serve_2nd
       };
@@ -169,7 +171,7 @@ De_Ply2Serve_2nd = pcase {                 //1st serve is out
           p2_rally = 1;
           ball=2;
         } -> Ply1_mid_stroke
-		p2_6 * p2_fatigue / p2_max_fatigue * error_mult: Serve_err{
+		p2_6 + p2_6 * p2_fatigue / p2_max_fatigue * error_mult: Serve_err{
           ball=9;
         } -> Ndoublefault{
             p1score++;
@@ -187,7 +189,7 @@ Ad_Ply2Serve = pcase {
 		  p2_rally = 1;
           ball=3;
         } -> Ply1_ad_stroke
-		p2_9 * p2_fatigue / p2_max_fatigue * error_mult: Serve_err{
+		p2_9 + p2_9 * p2_fatigue / p2_max_fatigue * error_mult: Serve_err{
           ball=9;
         } -> Ad_Ply2Serve_2nd
       };
@@ -201,7 +203,7 @@ Ad_Ply2Serve_2nd = pcase {                 //1st serve is out
           p2_rally = 1;
           ball=3;
         } -> Ply1_ad_stroke
-		p2_12 * p2_fatigue / p2_max_fatigue * error_mult: Serve_err{
+		p2_12 + p2_12 * p2_fatigue / p2_max_fatigue * error_mult: Serve_err{
           ball=9;
         } -> Ndoublefault{
             p1score++;
@@ -225,7 +227,7 @@ Ply2_de_stroke = pcase {
         updateP2Fatigue;
         ball=3;
       } -> Ply1_ad_stroke
-    p2_16 * p2_fatigue / p2_max_fatigue * (error_mult + p2_rally / average_rally_length): Error {
+    p2_16 + p2_16 * p2_fatigue / p2_max_fatigue * (error_mult + p2_rally / average_rally_length): Error {
         updateP2Fatigue;
         ball=9;
       } -> p2_stroke_error
@@ -244,7 +246,7 @@ Ply2_mid_stroke = pcase {
         updateP2Fatigue;
         ball=3;
       } -> Ply1_ad_stroke 
-    p2_20 * p2_fatigue / p2_max_fatigue * (error_mult + p2_rally / average_rally_length): Error {
+    p2_20 + p2_20 * p2_fatigue / p2_max_fatigue * (error_mult + p2_rally / average_rally_length): Error {
         updateP2Fatigue;
         ball=9;
       } -> p2_stroke_error
@@ -263,7 +265,7 @@ Ply2_ad_stroke = pcase {
         updateP2Fatigue;
         ball=3;
       } -> Ply1_ad_stroke 
-    p2_24 * p2_fatigue / p2_max_fatigue * (error_mult + p2_rally / average_rally_length): Error {
+    p2_24 + p2_24 * p2_fatigue / p2_max_fatigue * (error_mult + p2_rally / average_rally_length): Error {
         updateP2Fatigue;
         ball=9;
       } -> p2_stroke_error
@@ -285,7 +287,7 @@ Ply1_de_stroke = pcase {
         ball=4;
       } -> Ply2_ad_stroke
     
-    p1_16 * p1_fatigue / p1_max_fatigue * (error_mult + p1_rally / average_rally_length): Error {
+    p1_16 + p1_16 * p1_fatigue / p1_max_fatigue * (error_mult + p1_rally / average_rally_length): Error {
         updateP1Fatigue;
         ball=9;
       } -> p1_stroke_error
@@ -304,7 +306,7 @@ Ply1_mid_stroke = pcase {
         updateP1Fatigue;
         ball=4;
       } -> Ply2_ad_stroke
-    p1_20 * p1_fatigue / p1_max_fatigue * (error_mult + p1_rally / average_rally_length): Error {
+    p1_20 + p1_20 * p1_fatigue / p1_max_fatigue * (error_mult + p1_rally / average_rally_length): Error {
         updateP1Fatigue;
         ball=9;
       } -> p1_stroke_error
@@ -323,7 +325,7 @@ Ply1_ad_stroke = pcase {
         updateP1Fatigue;
         ball=4;
       } -> Ply2_ad_stroke
-    p1_24 * p1_fatigue / p1_max_fatigue * (error_mult + p1_rally / average_rally_length): Error {
+    p1_24 + p1_24 * p1_fatigue / p1_max_fatigue * (error_mult + p1_rally / average_rally_length): Error {
         updateP1Fatigue;
         ball=9;
       } -> p1_stroke_error
