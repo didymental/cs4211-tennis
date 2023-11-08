@@ -1,0 +1,379 @@
+#define p2_24 163;
+#define p2_23 449;
+#define p2_22 262;
+#define p2_21 123;
+#define p2_20 112;
+#define p2_19 346;
+#define p2_18 307;
+#define p2_17 234;
+#define p2_16 169;
+#define p2_15 157;
+#define p2_14 311;
+#define p2_13 362;
+#define p2_12 64;
+#define p2_11 745;
+#define p2_10 190;
+#define p2_9 362;
+#define p2_8 299;
+#define p2_7 338;
+#define p2_6 63;
+#define p2_5 255;
+#define p2_4 682;
+#define p2_3 352;
+#define p2_2 250;
+#define p2_1 397;
+#define p1_24 165;
+#define p1_23 335;
+#define p1_22 336;
+#define p1_21 163;
+#define p1_20 129;
+#define p1_19 316;
+#define p1_18 304;
+#define p1_17 251;
+#define p1_16 162;
+#define p1_15 181;
+#define p1_14 280;
+#define p1_13 376;
+#define p1_12 188;
+#define p1_11 674;
+#define p1_10 138;
+#define p1_9 362;
+#define p1_8 417;
+#define p1_7 218;
+#define p1_6 129;
+#define p1_5 204;
+#define p1_4 667;
+#define p1_3 321;
+#define p1_2 260;
+#define p1_1 415;
+
+// ***MatchName***
+//       *****
+//    Player1
+// de_ct  mid  ad_ct
+// -----+-----+-----
+// |    |     |    |
+// | 1  |  2  | 3  |
+// |    |     |    |
+// |===============|
+// |    |     |    |
+// | 4  |  5  | 6  |
+// |    |     |    |
+// -----+-----+-----
+// ad_ct  mid  de_ct
+//    Player2
+//       *****
+
+//variable declarations
+enum{p1_ad_ct, p1_de_ct, p2_ad_ct, p2_de_ct}; //serve position: ad court or deuce court
+enum{player1, player2, na};
+#define end_score 1;
+#define P1_STAMINA 7; // stamina maybe can get from their elo ranking or some player statistics source?
+#define P2_STAMINA 7;
+var turn = na; //serve turn;
+var average_rally_length = 5;
+var p1score = 0;
+var p2score = 0;
+var recovery_rate = 3 / 4;
+var won = na;
+var ball = 9; // indicate that ball is not in any court now
+var p1_max_fatigue = P1_STAMINA + average_rally_length;
+var p2_max_fatigue = P2_STAMINA + average_rally_length;
+var p1_rally = 0;
+var p2_rally = 0;
+
+var error_mult = 2;
+
+var p1_fatigue: {1..(p1_max_fatigue)} = 1; // multiply error probabilities by the fatigue level (maybe can just add or sth)
+var p2_fatigue: {1..(p2_max_fatigue)} = 1;
+
+// indicate the position of the player
+var p1_pos_in_court: {0..3} = 0; // indicate player is not yet in court
+var p2_pos_in_court: {4..7} = 7; // indicate player is not yet in court
+var p1_from_pos_in_court: {0..3} = p1_pos_in_court; // default values
+var p2_from_pos_in_court: {4..7} = p2_pos_in_court; // default values
+
+// This is how the game itself will be launched
+TieBreakGame = WhoServe1st; (Player1Serve [] Player2Serve);
+
+// This is how the game starts/continues (e.g. Player1Serve/Player2Serve until win condition eventually reached), notice that NextPt is called on every error
+NextPt = Player1Serve [] Player2Serve [] ([won != na] GameOver -> Skip);
+
+// Event to determine who serves first, basically 50/50
+WhoServe1st = []i:{p1_de_ct,p2_de_ct}@ TossCoin{turn = i} -> Skip;
+
+// Service events, after WhoServe1st in TieBreakGame runs sequentially, either Player1Serve or Player2Serve can run (general choice)
+// initialise court position to serve and receive serve positions
+Player1Serve = [won == na && turn == p1_de_ct] p1Ready_DeCt{ p1_pos_in_court=1; p2_pos_in_court=6; } -> De_Ply1Serve [] [won == na && turn == p1_ad_ct] p1Ready_AdCt{ p1_pos_in_court=3; p2_pos_in_court=4; } -> Ad_Ply1Serve;
+Player2Serve = [won == na && turn == p2_de_ct] p2Ready_DeCt{ p1_pos_in_court=1; p2_pos_in_court=6; } -> De_Ply2Serve [] [won == na && turn == p2_ad_ct] p2Ready_AdCt{ p1_pos_in_court=3; p2_pos_in_court=4; } -> Ad_Ply2Serve;
+
+// Error events, increment score and check for win condition, then call NextPt (which has GameOver -> Skip)
+p1_stroke_error = {
+  p2score++;
+  if (p1_fatigue * recovery_rate > 1) { p1_fatigue = p1_fatigue * recovery_rate }; if (p2_fatigue * recovery_rate > 1) { p2_fatigue = p2_fatigue * recovery_rate }; if (p2score==end_score) {won=player2};  turn=((turn+1)%4)} -> NextPt;
+p2_stroke_error = {
+  p1score++;
+  if (p1_fatigue * recovery_rate > 1) { p1_fatigue = p1_fatigue * recovery_rate }; if (p2_fatigue * recovery_rate > 1) { p2_fatigue = p2_fatigue * recovery_rate }; if (p1score==end_score) {won=player1};  turn=((turn+1)%4);} -> NextPt;
+
+// Endgame conditions/assertions
+#define player1Win won == player1;
+#define player2Win won == player2;
+#assert TieBreakGame reaches player1Win with prob;
+#assert TieBreakGame reaches player2Win with prob;
+#assert TieBreakGame deadlockfree;
+
+// reusable functions
+// t = t + delta(pError)
+// transformation rate = oldt/newt
+#define updateP2Fatigue { p2_rally++; p2_from_pos_in_court=p2_pos_in_court; p2_pos_in_court=ball; if (p2_pos_in_court - p2_from_pos_in_court < 0) { p2_fatigue = p2_fatigue + (-1 * (p2_pos_in_court - p2_from_pos_in_court)) } else { p2_fatigue = p2_fatigue + p2_pos_in_court - p2_from_pos_in_court } };
+#define updateP1Fatigue { p1_rally++; p1_from_pos_in_court=p1_pos_in_court; p1_pos_in_court=ball; if (p1_pos_in_court - p1_from_pos_in_court < 0)  { p1_fatigue = p1_fatigue + (-1 * (p1_pos_in_court - p1_from_pos_in_court)) } else { p1_fatigue = p1_fatigue + p1_pos_in_court - p1_from_pos_in_court } };
+
+
+// Service probabilities, basically need fill in with the PlyX_BackhandR and Ply2_ForeHandR is basically the service return shot, 2nd serve is if 1st serve is erroneous
+De_Ply1Serve = pcase {                            
+		p1_1: ServeToDeuce{
+          p1_rally = 1;;
+          ball=6;
+        } -> Ply2_de_stroke
+		p1_2: ServeToMid{
+          p1_rally = 1;
+          ball=5; // ball lands at pos 5
+        } -> Ply2_mid_stroke 
+		p1_3 * p1_fatigue / p1_max_fatigue * error_mult: Serve_err {  // 1st serve is total 2/ total 1
+          ball=9;
+        } -> De_Ply1Serve_2nd
+    };
+
+De_Ply1Serve_2nd = pcase {
+		p1_4: ServeToDeuce{
+          p1_rally = 1;
+          ball=6;
+        } -> Ply2_de_stroke
+		p1_5: ServeToMid{
+          p1_rally = 1;
+          ball=5;
+        } -> Ply2_mid_stroke  
+		p1_6 * p1_fatigue / p1_max_fatigue * error_mult: Serve_err{
+          ball=9;
+        } -> Fdoublefault {
+            p2score++;
+            if (p2score == end_score) { won = player2 }
+            else { turn = (turn+1)%4 }
+          } -> NextPt
+      };
+
+Ad_Ply1Serve = pcase {
+		p1_7: ServeToMid{
+          p1_rally = 1;
+          ball=5;
+        } -> Ply2_mid_stroke  
+		p1_8: ServeToAd{
+          p1_rally = 1;
+          ball=4;
+        } -> Ply2_ad_stroke
+		p1_9 * p1_fatigue / p1_max_fatigue * error_mult: Serve_err{
+          ball=9;
+        } -> Ad_Ply1Serve_2nd
+      };
+
+Ad_Ply1Serve_2nd = pcase {                 //1st serve is out
+		p1_10: ServeToMid{
+          p1_rally = 1;
+          ball= 5;
+        } -> Ply2_mid_stroke
+		p1_11: ServeToAd{
+          p1_rally = 1;
+          ball=4;
+        } -> Ply2_ad_stroke
+		p1_12 * p1_fatigue / p1_max_fatigue * error_mult: Serve_err{
+          p1_rally = p1_rally * p1_rally;
+          ball=9;
+        } -> Fdoublefault{
+            p2score++;
+            if (p2score == end_score) {won = player2}
+            else { turn = (turn+1)%4}
+          } -> NextPt
+      };    
+     
+De_Ply2Serve = pcase {
+		p2_1: ServeToDeuce{
+		  p2_rally = 1;
+          ball=1;
+        } -> Ply1_de_stroke
+        p2_2: ServeToMid{
+          p2_rally = 1;
+          ball=2;
+        } -> Ply1_mid_stroke
+		p2_3 * p2_fatigue / p2_max_fatigue * error_mult: Serve_err{
+          ball=9;
+        } -> De_Ply2Serve_2nd
+      };
+
+De_Ply2Serve_2nd = pcase {                 //1st serve is out
+		p2_4: ServeToDeuce{
+          p2_rally = 1;
+          ball=1;
+        } -> Ply1_de_stroke
+		p2_5: ServeToMid{
+          p2_rally = 1;
+          ball=2;
+        } -> Ply1_mid_stroke
+		p2_6 * p2_fatigue / p2_max_fatigue * error_mult: Serve_err{
+          ball=9;
+        } -> Ndoublefault{
+            p1score++;
+            if (p1score == end_score) {won = player1}
+            else { turn = (turn+1)%4}
+          } -> NextPt
+      };
+     
+Ad_Ply2Serve = pcase {
+		p2_7: ServeToMid{
+		  p2_rally = 1;
+          ball=2;
+        } -> Ply1_mid_stroke
+		p2_8: ServeToAd{
+		  p2_rally = 1;
+          ball=3;
+        } -> Ply1_ad_stroke
+		p2_9 * p2_fatigue / p2_max_fatigue * error_mult: Serve_err{
+          ball=9;
+        } -> Ad_Ply2Serve_2nd
+      };
+
+Ad_Ply2Serve_2nd = pcase {                 //1st serve is out
+		p2_10: ServeToMid{
+		  p2_rally = 1;
+          ball=2;
+        } -> Ply1_mid_stroke
+		p2_11: ServeToAd{
+          p2_rally = 1;
+          ball=3;
+        } -> Ply1_ad_stroke
+		p2_12 * p2_fatigue / p2_max_fatigue * error_mult: Serve_err{
+          ball=9;
+        } -> Ndoublefault{
+            p1score++;
+            if (p1score == end_score) {won = player1}
+            else { turn = (turn+1)%4}
+          }-> NextPt
+      };
+
+
+// These are stroke probabilities that the player will perform each shot, and which court he performs it to. Alternates between p1_stroke and p2_stroke until an error occurs.
+Ply2_de_stroke = pcase {
+	p2_13: ReturnToDe {
+        updateP2Fatigue;
+        ball=1;
+      } -> Ply1_de_stroke 
+    p2_14: ReturnToMid {
+        updateP2Fatigue;
+        ball=2;
+      } -> Ply1_mid_stroke 
+    p2_15: ReturnToAd {
+        updateP2Fatigue;
+        ball=3;
+      } -> Ply1_ad_stroke
+    p2_16 * p2_fatigue / p2_max_fatigue * (error_mult + p2_rally / average_rally_length): Error {
+        updateP2Fatigue;
+        ball=9;
+      } -> p2_stroke_error
+  };
+
+Ply2_mid_stroke = pcase {
+    p2_17: ReturnToDe {
+        updateP2Fatigue;
+        ball=1;
+      } -> Ply1_de_stroke
+    p2_18: ReturnToMid {
+        updateP2Fatigue;
+        ball=2;
+      } -> Ply1_mid_stroke
+    p2_19: ReturnToAd {
+        updateP2Fatigue;
+        ball=3;
+      } -> Ply1_ad_stroke 
+    p2_20 * p2_fatigue / p2_max_fatigue * (error_mult + p2_rally / average_rally_length): Error {
+        updateP2Fatigue;
+        ball=9;
+      } -> p2_stroke_error
+  };
+
+Ply2_ad_stroke = pcase {
+    p2_21: ReturnToDe {
+        updateP2Fatigue;
+        ball=1;
+      } -> Ply1_de_stroke
+    p2_22: ReturnToMid {
+        updateP2Fatigue;
+        ball=2;
+      } -> Ply1_mid_stroke
+    p2_23: ReturnToAd {
+        updateP2Fatigue;
+        ball=3;
+      } -> Ply1_ad_stroke 
+    p2_24 * p2_fatigue / p2_max_fatigue * (error_mult + p2_rally / average_rally_length): Error {
+        updateP2Fatigue;
+        ball=9;
+      } -> p2_stroke_error
+  };
+
+Ply1_de_stroke = pcase {
+    p1_13: ReturnToDeuce {
+        updateP1Fatigue;
+        ball=6;
+      } -> Ply2_de_stroke 
+    
+    p1_14: ReturnToMid {
+        updateP1Fatigue;
+        ball=5;
+      } -> Ply2_mid_stroke 
+    
+    p1_15: ReturnToAd {
+        updateP1Fatigue;
+        ball=4;
+      } -> Ply2_ad_stroke
+    
+    p1_16 * p1_fatigue / p1_max_fatigue * (error_mult + p1_rally / average_rally_length): Error {
+        updateP1Fatigue;
+        ball=9;
+      } -> p1_stroke_error
+  };
+
+Ply1_mid_stroke = pcase {
+    p1_17: ReturnToDeuce {
+        updateP1Fatigue;
+        ball=6;
+      } -> Ply2_de_stroke
+    p1_18: ReturnToMid {
+        updateP1Fatigue;
+        ball=5;
+      } -> Ply2_mid_stroke
+    p1_19: ReturnToAd {
+        updateP1Fatigue;
+        ball=4;
+      } -> Ply2_ad_stroke
+    p1_20 * p1_fatigue / p1_max_fatigue * (error_mult + p1_rally / average_rally_length): Error {
+        updateP1Fatigue;
+        ball=9;
+      } -> p1_stroke_error
+  };
+
+Ply1_ad_stroke = pcase {
+    p1_21: ReturnToDeuce {
+        updateP1Fatigue;
+        ball=6;
+      } -> Ply2_de_stroke
+    p1_22: ReturnToMid {
+        updateP1Fatigue;
+        ball=5;
+      } -> Ply2_mid_stroke
+    p1_23: ReturnToAd {
+        updateP1Fatigue;
+        ball=4;
+      } -> Ply2_ad_stroke
+    p1_24 * p1_fatigue / p1_max_fatigue * (error_mult + p1_rally / average_rally_length): Error {
+        updateP1Fatigue;
+        ball=9;
+      } -> p1_stroke_error
+  };
